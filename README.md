@@ -25,8 +25,10 @@ II. Nội dung chính
     
     +Ở bản update:
       
-      - Thêm các cải thuật tính đểm dựa trên đồ thị để biểu diễn tương quan các quan hệ giữa các giao dịch với nhau, nhằm tạo ra những feature mới để hỗ trợ mô hình học thêm cách phát hiện những nhóm giao dịch gian lận có tổ chức. 
-      - Đánh giá được mức độ liên quan của các tài khoản có trong mạng lưới giao dịch gian lận, xác định được tài khoản nào là tài khoản chính, tài khoản trung gian 
+      - Thêm các cải thuật tính đểm dựa trên đồ thị để biểu diễn tương quan mối quan hệ giữa các giao dịch với nhau, nhằm tạo ra những feature mới để hỗ trợ mô hình học thêm cách phát hiện những nhóm giao dịch gian lận có tổ chức. 
+      
+      - Đánh giá được mức độ liên quan của các tài khoản có trong mạng lưới giao dịch gian lận, xác định được tài khoản nào là tài khoản chính, tài khoản trung gian.
+      
       - Phát hiện được thêm các giao dịch gian lận mới nhờ đánh giá qua các điểm liên quan giữa tài khoản mới và tải khoản cũ. 
       
     
