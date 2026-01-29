@@ -1,46 +1,200 @@
-"# ML_Fraud_detection" 
+# ML_Fraud_detection
+# Feature Engineering Phân Tán & Modeling Theo Cost
+## 1. Tổng quan
+Dự án này xây dựng **pipeline phát hiện gian lận (fraud detection) end-to-end** trên dữ liệu giao dịch lớn, kết hợp:
+* **Apache Spark** cho tính toán phân tán (feature engineering, temporal features, graph)
+* **Pandas / NumPy + LightGBM / XGBoost** cho huấn luyện model và tối ưu ngưỡng theo chi phí
+Thiết kế bám sát **kiến trúc thực tế trong ngân hàng / fintech**:
+> **Spark xử lý nặng & dữ liệu lớn → bảng feature gọn → model tabular mạnh → threshold theo business cost**
+Mục tiêu chính:
+* **Recall cao**: hạn chế bỏ sót fraud
+* **Giảm FP**: tránh làm phiền khách hàng không cần thiết
+## 2. Dữ liệu
+* Dữ liệu giao dịch (transaction-level)
+* Tỷ lệ gian lận cực thấp (< 1%) → bài toán **class imbalance nặng**
+Các thực thể chính:
+* `nameOrig`: tài khoản nguồn
+* `nameDest`: tài khoản đích
+* `amount`: số tiền giao dịch
+* `step`: mốc thời gian rời rạc
+* `isFraud`: nhãn gian lận
 
-I. Giới thiệu
+Chỉ giữ các loại giao dịch có ý nghĩa gian lận (ví dụ: `TRANSFER`, `CASH_OUT`).
 
-      Project ML_fraud_detection là một bài toán Machine Learning nhằm phát triển mô hình phân loại giao dịch – phát hiện gian lận (fraud detection) trên dữ liệu giao dịch rentalz. Mục tiêu của dự án là xây dựng pipeline từ khám phá dữ liệu (EDA), xử lý dữ liệu, huấn luyện mô hình đến đánh giá hiệu năng dự đoán để hỗ trợ hệ thống nhận diện giao dịch bất thường. Project được xây dựng trên google colab dưới dạng Notebook để dễ dàng theo dõi toàn bộ quá trình phân tích, tiền xử lý dữ liệu, lựa chọn mô hình và đánh giá kết quả.
-        
-+Mục tiêu
+## 3. Kiến trúc hệ thống
 
-    -Phân tích dữ liệu giao dịch (transaction data) từ rentalz để hiểu cấu trúc và hành vi của dữ liệu.
-    
-    -Xử lý các vấn đề dữ liệu phổ biến: thiếu giá trị, biến phân loại, chuẩn hoá/chuẩn hoá biến số.
-    
-    -Huấn luyện và đánh giá các mô hình Machine Learning nhằm phát hiện giao dịch gian lận (Fraud Detection).
-    
-    -Trực quan hóa kết quả, giải thích hiệu năng và khả năng áp dụng mô hình vào môi trường thực tế.
+Raw CSV (hàng triệu giao dịch)
+        ↓
+Apache Spark (Distributed)
+  - Lọc dữ liệu
+  - Aggregation theo account
+  - Temporal / window features
+  - Graph-based PageRank
+        ↓
+Bảng feature (đã cô đặc)
+        ↓
+Pandas / NumPy
+        ↓
+Model (LightGBM / XGBoost)
+        ↓
+Chọn threshold theo cost + recall
+        ↓
+Đánh giá & deploy
 
-II. Nội dung chính
-   +Tiền xử lý dữ liệu:
+Spark chỉ dùng **đúng chỗ cần phân tán**, model training giữ ở single-node để tối ưu linh hoạt.
 
-      -Làm sạch dữ liệu: điền thiếu, loại bỏ biến không cần thiết.
-      
-      -Mã hóa biến phân loại (categorical encoding).
-      
-      -Chuẩn hóa/tiêu chuẩn hóa các biến số.
-    
-    +Ở bản update:
-      
-      - Thêm các cải thuật tính đểm dựa trên đồ thị để biểu diễn tương quan mối quan hệ giữa các giao dịch với nhau, nhằm tạo ra những feature mới để hỗ trợ mô hình học thêm cách phát hiện những nhóm giao dịch gian lận có tổ chức. 
-      
-      - Đánh giá được mức độ liên quan của các tài khoản có trong mạng lưới giao dịch gian lận, xác định được tài khoản nào là tài khoản chính, tài khoản trung gian.
-      - Phát hiện được thêm các giao dịch gian lận mới nhờ đánh giá qua các điểm liên quan giữa tài khoản mới và tải khoản cũ. 
-      - Sử dụng Sparksql thay vì pandas dể tối ưu tốc độ tính toán các feature. 
-      - Customize Page rank init theo trọng số và không share đều cho các user để các giao dịch có gian lận được tính score cao hơn từ đó giúp training đạt hiệu quả cao hơn. 
-    
 
-III. Xây dựng mô hình và so sánh hiệu suất của các mô hình. 
+## 4. Feature Engineering (Spark)
 
-        -So sánh nhiều thuật toán phân loại (ví dụ: Logistic Regression, Random Forest, XGBoost).
-        
-        -Sử dụng cross‑validation để ước tính hiệu năng dự đoán thực tế.
-        
-        -Đánh giá mô hình:
-        
-        -Đánh giá các chỉ số Accuracy, Precision, Recall, F1‑Score, ROC‑AUC của các mô hình. 
-        
-        -Trực quan hóa kết quả ROC Curve, ma trận nhầm lẫn để đánh giá và so sánh các mô hình với nhau.
+### 4.1 Feature giao dịch cơ bản
+
+* Chênh lệch số dư:
+
+  * `orig_diff = oldbalanceOrg - newbalanceOrig`
+  * `dest_diff = newbalanceDest - oldbalanceDest`
+* Chuẩn hóa theo amount
+* Tổng số giao dịch, tổng amount theo account
+
+### 4.2 Feature temporal (hành vi theo thời gian)
+
+Sử dụng sliding window (N giao dịch gần nhất):
+
+* `tx_cnt_10`
+* `tx_amt_sum_10`
+* `tx_amt_mean_10`
+* `tx_amt_std_10`
+* `time_since_last_tx`
+
+→ Bắt được **hành vi bất thường / thay đổi đột ngột**.
+
+### 4.3 Feature đồ thị – Fraud PageRank (custom)
+
+Triển khai **PageRank tùy biến cho fraud network** bằng Spark (không dùng GraphFrames):
+
+* Node: tài khoản
+* Edge: giao dịch
+* Trọng số cạnh:
+
+  * Chuẩn hóa theo tổng amount đi ra của node
+* Khởi tạo không đều (personalized):
+
+  * Dựa trên số giao dịch + tổng amount
+
+Sinh ra:
+
+* `orig_pagerank`
+* `dest_pagerank`
+
+Ý nghĩa: **lan truyền rủi ro trong mạng lưới giao dịch**, không phải PageRank thuần lý thuyết.
+
+---
+
+## 5. Feature set cuối cùng (không leakage)
+
+```
+FEATURES = [
+    "step", "amount",
+    "orig_diff", "dest_diff",
+    "amount_diff_orig", "amount_diff_dest",
+    "orig_tx_count", "dest_tx_count",
+    "orig_unique_dest", "dest_unique_orig",
+    "orig_sum_amount", "dest_sum_amount",
+    "orig_pagerank", "dest_pagerank",
+    "tx_cnt_10",
+    "tx_amt_sum_10",
+    "tx_amt_mean_10",
+    "tx_amt_std_10",
+    "time_since_last_tx",
+]
+```
+
+Tất cả feature đều được tính **từ quá khứ**, đảm bảo không leak thông tin tương lai.
+
+---
+
+## 6. Huấn luyện model
+
+Model sử dụng:
+
+* LightGBM
+* XGBoost
+* RandomForest
+* Logistic Regression (baseline)
+
+Không dùng Spark MLlib vì:
+
+* Khó tối ưu PR-AUC
+* Không linh hoạt với cost-based threshold
+* Hiệu quả kém hơn GBDT cho fraud
+
+## 7. Metric đánh giá
+
+Do dữ liệu mất cân bằng mạnh → **KHÔNG dùng accuracy**.
+
+Metric chính:
+
+* **PR-AUC**: chất lượng xếp hạng
+* **Recall**: khả năng bắt fraud
+* **Precision**: ảnh hưởng tới khách hàng
+
+Metric theo nghiệp vụ:
+
+* **Recall@TopK%**: bắt được bao nhiêu fraud khi chỉ soi K% giao dịch rủi ro nhất
+* **Lift@K**: tốt hơn random bao nhiêu lần
+
+## 8. Chọn threshold theo cost (Cost-based)
+
+Không dùng threshold = 0.5.
+
+Áp dụng:
+
+* Ràng buộc: Recall ≥ 85%
+* Trong vùng đó, chọn threshold **minimize expected cost**
+
+```
+Expected Cost = COST_FN × FN + COST_FP × FP
+```
+
+Đảm bảo:
+
+* Không bỏ sót fraud quan trọng
+* Giảm false positive ở mức tối đa có thể
+
+
+## 9. Kết quả điển hình
+
+* Recall: ~0.88 – 0.91
+* Precision: ~0.15 – 0.18 (bình thường với fraud)
+* PR-AUC: ~0.80+
+* Lift@Top0.1% cao
+
+Precision thấp là **bản chất bài toán**, không phải lỗi model.
+
+## 10. Triển khai thực tế
+
+Pipeline phù hợp cho:
+
+* Offline training
+* Online scoring
+
+Spark dùng cho batch feature
+Model deploy dạng service để scoring real-time.
+
+## 11. Tổng kết
+
+* Dùng distributed computing đúng chỗ
+* Modeling linh hoạt, sát business
+* Đánh giá theo góc nhìn fraud thật
+* Kiến trúc tương đương hệ thống production
+
+## 12. Hướng phát triển tiếp
+
+* Community / ring detection
+* Graph temporal features
+* Streaming fraud detection
+* GNN khi hạ tầng cho phép
+
+## 13. Lưu ý
+
+Dự án mang tính học thuật – nghiên cứu, được xây dựng trên dataset có sẵn, chưa thay thế hệ thống fraud production nếu chưa có monitoring, rule engine và kiểm soát nghiệp vụ.
+á và so sánh các mô hình với nhau.
