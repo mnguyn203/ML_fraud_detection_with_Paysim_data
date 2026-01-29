@@ -89,7 +89,7 @@ Sinh ra:
 
 ---
 
-## 5. Feature set cuối cùng (không leakage)
+## 5. Feature set 
 
 ```
 FEATURES = [
